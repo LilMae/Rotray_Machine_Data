@@ -16,4 +16,4 @@ dataset link : https://data.mendeley.com/datasets/ztmf3m7h5x/6?utm_source=chatgp
 
 ## 4. VBL-V001
 paper : https://link.springer.com/article/10.1007/s42417-023-00959-9  
-dataset link : https://github.com/bagustris/VBL-VA001?tab=readme-ov-file(github) https://zenodo.org/records/7006575#.Y3W9lzPP2og (data link)
+dataset link : https://github.com/bagustris/VBL-VA001?tab=readme-ov-file (github) https://zenodo.org/records/7006575#.Y3W9lzPP2og (data link)
