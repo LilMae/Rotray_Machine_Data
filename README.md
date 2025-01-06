@@ -11,6 +11,7 @@ paper : https://ieeexplore.ieee.org/document/9212000
 dataset link : https://fordatis.fraunhofer.de/handle/fordatis/151.3
 
 ## 1.3 Vibration, Acoustic, Temperature, and Motor Current Dataset of Rotating Machine Under Varying Operating Conditions for Fault Diagnosis
+> I call it VAT-MCD dataset
 paper : https://www.sciencedirect.com/science/article/pii/S2352340923001671  
 dataset link : https://data.mendeley.com/datasets/ztmf3m7h5x/6?utm_source=chatgpt.com  
 
