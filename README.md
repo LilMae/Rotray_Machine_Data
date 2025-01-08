@@ -2,24 +2,54 @@
 EDA and integrate various rotary machine dataset  
 최대한 다양한 데이터를 모으려고 하고 있음, 대부분의 데이터가 베어링 이상인데 가능하면 베어링 외에 회전체에서 발생가능한 데이터셋을 찾는 것을 주 목적으로 함
 
+- 아래의 데이터 개수는 다음 세팅을 기준으로 데이터를 분할한 경우의 결과임
+
+| Parameter       | Value   |
+|-----------------|---------|
+| Target Sampling(Hz) | 20000   |
+| Window Size(point 개수)     | 2048    |
+| Hop Size(point 개수)        | 1024    |
+
 ## 1.1 FaultDXAI (Fault Diagnosis using eXplainable AI)
 paper : https://www.sciencedirect.com/science/article/pii/S0957417423013623  
 dataset link : https://data.mendeley.com/datasets/zx8pfhdtnb/3?utm_source=chatgpt.com  
 
+
+| Metric          | Value                                                                 |
+|------------------|----------------------------------------------------------------------|
+| Data Length      | 142800                                                              |
+| Classes          | {'Looseness': 35700, 'Unbalance': 35700, 'Normal Condition': 35700, 'Misalignment': 35700} |
+
+
 ## 1.2 Machine Learning-Based Unbalance Detection of a Rotating Shaft Using Vibration Data
 paper : https://ieeexplore.ieee.org/document/9212000  
 dataset link : https://fordatis.fraunhofer.de/handle/fordatis/151.3
+
+| Metric          | Value                                                                 |
+|------------------|----------------------------------------------------------------------|
+| Data Length      | 170                                                                  |
+| Classes          | {'unbalance60.7': 34, 'unbalance75.5': 34, 'unbalance152.1': 34, 'unbalance45.9': 34, 'normalNone': 34} |
+
 
 ## 1.3 Vibration, Acoustic, Temperature, and Motor Current Dataset of Rotating Machine Under Varying Operating Conditions for Fault Diagnosis
 > I call it VAT-MCD dataset
 paper : https://www.sciencedirect.com/science/article/pii/S2352340923001671  
 dataset link : https://data.mendeley.com/datasets/ztmf3m7h5x/6?utm_source=chatgpt.com  
 
+| Metric          | Value                                                                 |
+|------------------|----------------------------------------------------------------------|
+| Data Length      | 765                                                                  |
+| Classes          | {'Misalign03': 51, 'normal': 51, 'BPFI10': 51, 'Unbalance0583mg': 34, 'Misalign01': 51, 'BPFO30': 51, 'Unbalance1169mg': 34, 'Misalign05': 51, 'BPFI03': 51, 'Unbalalnce1751mg': 17, 'Unbalance2239mg': 34, 'BPFO03': 51, 'BPFI30': 51, 'Unbalance3318mg': 34, 'BPFO10': 51, 'Unbalalnce3318mg': 17, 'Unbalalnce2239mg': 17, 'Unbalalnce1169mg': 17, 'Unbalance1751mg': 34, 'Unbalalnce0583mg': 17} |
+
+
 ## 1.4 VBL-V001
 paper : https://link.springer.com/article/10.1007/s42417-023-00959-9  
 dataset link : https://github.com/bagustris/VBL-VA001?tab=readme-ov-file (github) https://zenodo.org/records/7006575#.Y3W9lzPP2og (data link)
 
-
+| Metric          | Value                                                                 |
+|------------------|----------------------------------------------------------------------|
+| Data Length      | 68000                                                                |
+| Classes          | {'normal': 17000, 'misalignment': 17000, 'bearing': 17000, 'unbalance': 17000} |
 
 
 # 2. 사용하고자 하는 특징
