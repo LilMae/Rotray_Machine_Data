@@ -4,12 +4,6 @@ EDA and integrate various rotary machine dataset
 
 - 아래의 데이터 개수는 다음 세팅을 기준으로 데이터를 분할한 경우의 결과임
 
-| Parameter       | Value   |
-|-----------------|---------|
-| Target Sampling(Hz) | 20000   |
-| Window Size(point 개수)     | 2048    |
-| Hop Size(point 개수)        | 1024    |
-
 ## 1.1 FaultDXAI (Fault Diagnosis using eXplainable AI)
 paper : https://www.sciencedirect.com/science/article/pii/S0957417423013623  
 dataset link : https://data.mendeley.com/datasets/zx8pfhdtnb/3?utm_source=chatgpt.com  
@@ -22,6 +16,8 @@ dataset link : https://data.mendeley.com/datasets/zx8pfhdtnb/3?utm_source=chatgp
 
 
 ## 1.2 Machine Learning-Based Unbalance Detection of a Rotating Shaft Using Vibration Data
+> Static Speed 로 존재하는 것이 아니라 속도가 올라가면서 실험을 진행하였다.  
+> 현재 활용방안 모색 중  
 paper : https://ieeexplore.ieee.org/document/9212000  
 dataset link : https://fordatis.fraunhofer.de/handle/fordatis/151.3
 
@@ -50,6 +46,14 @@ dataset link : https://github.com/bagustris/VBL-VA001?tab=readme-ov-file (github
 |------------------|----------------------------------------------------------------------|
 | Data Length      | 68000                                                                |
 | Classes          | {'normal': 17000, 'misalignment': 17000, 'bearing': 17000, 'unbalance': 17000} |
+
+## 1.5 Multi-domain vibration dataset with various bearing types under compound machine fault scenarios
+paper : https://www.sciencedirect.com/science/article/pii/S235234092400903X 
+dataset link : https://data.mendeley.com/datasets/7trwzz77xh/1 
+
+## 1.6 Motor current and vibration monitoring dataset for various faults in an E-motor-driven centrifugal pump
+paper link : https://www.sciencedirect.com/science/article/pii/S235234092301017X 
+dataset link : https://data.4tu.nl/datasets/2b61183e-c14f-4131-829b-cc4822c369d0 
 
 
 # 2. 사용하고자 하는 특징
