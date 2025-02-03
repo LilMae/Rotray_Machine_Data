@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from scipy.signal import butter, filtfilt
 
+from tqdm import tqdm
+
 import matplotlib.pyplot as plt
 
 class VibrationPipeline:
@@ -113,7 +115,11 @@ class VibrationPipeline:
         return torch.tensor(norm_magnitude, dtype=torch.float32), detailed_bins
     
 class VibrationDataset(Dataset):
-    def __init__(self, data_root, target_class, target_ch, transform=None):
+    def __init__(self, data_root, 
+                 target_dataset=['dxai', 'iis', 'mfd', 'vat', 'vbl'], 
+                 target_class=['looseness', 'normal', 'unbalance','misalignment', 'horizontal-misalignment', 'vertical-misalignment', 'overhang', 'underhang', 'bpfi', 'bpfo', 'bearing'], 
+                 target_ch = ['motor_x', 'motor_y'],
+                 transform=None):
         """
         Dataset for vibration data.
         
@@ -125,6 +131,7 @@ class VibrationDataset(Dataset):
         self.data_path_list = [
             os.path.join(data_root, dataset_name, class_name, file_name)
             for dataset_name in os.listdir(data_root)
+            if dataset_name in target_dataset
             for class_name in os.listdir(os.path.join(data_root,dataset_name))
             if class_name in target_class
             for file_name in os.listdir(os.path.join(data_root, dataset_name, class_name))
@@ -158,15 +165,13 @@ class VibrationDataset(Dataset):
         meta_data = {
             'freq' : freq,
             'sync_freq' : sync_freq,
-            'class_name' : class_name
+            'class_name' : class_name,
+            'file_path' : file_path
         }
         
         return data, meta_data
     
 if __name__ == '__main__':
-    # Example parameters
-    target_channels = ['motor_x', 'motor_y']  # Example channel names
-    dxai_root = os.path.join(os.getcwd(), 'new_dataset')  # Path to vibration data
 
     pipeline = VibrationPipeline(
         harmonics=8,  # Number of harmonics to extract
@@ -174,12 +179,25 @@ if __name__ == '__main__':
         smoothing_steps=1,  # Apply low-pass filter 3 times
         smoothing_param=0.1  # Lowpass cutoff frequency as 0.2 * Nyquist
     )
-    dataset = VibrationDataset(dxai_root, target_ch=target_channels, target_class=['normal', 'unbalance'], transform=pipeline)
-    sample_data, meta_data = dataset[4000]
     
-    print(f'data_shape : {sample_data.shape}')
+    # Example parameters
+    target_channels = ['motor_x', 'motor_y']  # Example channel names
+    dxai_root = os.path.join(os.getcwd(), 'data', 'new_dataset')  # Path to vibration data
+    target_dataset=['iis', 'mfd', 'vat', 'vbl']
+    target_class=['looseness', 'normal', 'unbalance','misalignment', 'horizontal-misalignment', 'vertical-misalignment',
+                    'overhang', 'underhang', 'bpfi', 'bpfo', 'bearing']
+    train_dataset = VibrationDataset(dxai_root, target_dataset=target_dataset, target_ch=target_channels, target_class=target_class, transform=pipeline)
+
+    nan_file = []
+    signal = []
+    for data, meta_data in tqdm(train_dataset):
+        if torch.any(torch.isnan(data)):
+            signal.append(data)
+            nan_file.append(meta_data['file_path'])
     
-    plt.title(meta_data['class_name'])
-    plt.plot(meta_data['freq'], sample_data[0])
-    plt.plot(meta_data['freq'], sample_data[1])
-    plt.show()
+    error_pd = pd.DataFrame({
+        'file_path' : nan_file,
+        'signal' : signal
+    })
+    
+    error_pd.to_csv('error.csv')
