@@ -1,6 +1,7 @@
 *.zip
-data/
+__pycache__/
+data/dataset/
+data/new_dataset
 readme_files/
 wandb/
-__pycache__/
 Vibration-AutoEncoder/
