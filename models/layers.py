@@ -9,6 +9,8 @@ class Residual(nn.Module):
                 num_residual_hiddens):
         super(Residual, self).__init__()
         
+        num_residual_hiddens = int(in_channels*num_residual_hiddens)
+        
         self.block = nn.Sequential(
             nn.ReLU(inplace=False),
             nn.Conv1d(in_channels=in_channels,

@@ -2,8 +2,8 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.matching_trainer import MappingNetwork
-from models.layers import Encoder, Decoder, ChannelWiseFC
+from matching_trainer import MappingNetwork
+from layers import Encoder, Decoder, ChannelWiseFC
 
 class AE_model(nn.Module):
     def __init__(self,
