@@ -7,275 +7,182 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 
-from models.ae_model import AE_model
-from models.vae_model import VAE_model
-from models.vqvae_model import VQVAE_model
-from models.utils import LinearTransformationModule
+import seaborn as sns
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 
-from lightning.pytorch.loggers import WandbLogger
-from torch.utils.data import DataLoader
-from dataset import VibrationDataset, VibrationPipeline
-
-class RMSELoss(nn.Module):
-    def __init__(self):
-        super(RMSELoss, self).__init__()
-        self.mse = nn.MSELoss()
+class ReconLoss(nn.Module):
+    def __init__(self, loss_name='mae'):
+        super().__init__()
+        if loss_name == 'mae':
+            self.loss = nn.L1Loss()
+        else:
+            self.loss = nn.MSELoss()
     
     def forward(self, y_hat, y):
-        return torch.sqrt(self.mse(y_hat, y))
+        return self.loss(y_hat, y)
 
 class Trainer(L.LightningModule):
-    def __init__(self, model, training_mode='recon', model_type='ae'):
+    def __init__(self, model, batch_size, model_type='vae', classifier=None, classes=None):
         super(Trainer, self).__init__()
         
-        self.model = ae_model
+        self.model = model
         self.model_type = model_type
-        self.training_mode = training_mode
-        
-        self.mse_loss = nn.RMSELoss()
+        self.batch_size = batch_size
+        self.mse_loss = ReconLoss()
     
+        self.classifier = classifier
+        self.classes = classes
+        self.y_true, self.y_pred, self.encoded_features, self.labels = [], [], [], []
+        if self.classifier:
+            self.criterion_class = nn.CrossEntropyLoss()
+        self.input_signals = None
         self.first_val_step = True  # 첫 번째 validation step을 체크하는 플래그
         
+    def label_to_index(self, labels):
+        """Convert labels to indices."""
+        class_to_idx = {cls: i for i, cls in enumerate(self.classes)}
+        return torch.tensor([class_to_idx[label] for label in labels], device=self.device)
+    
     def configure_optimizers(self):
-        if self.training_mode == 'recon':
-            optimzier = torch.optim.Adam(self.model.parameters(), lr=1e-3)
-            return optimzier
-        # elif self.training_mode =='transfer':
-        #     optimizer = torch.optim.Adam(self.ltm.parameters(), lr=1e-3)
-        #     return optimizer
+        optimzier = torch.optim.Adam(self.model.parameters(), lr=1e-3)
+        return optimzier
+
+    def compute_recon_loss(self, signal_data, meta_data):
+        
+        recon, distribution_loss = self.model(signal_data)
+        recon_loss = self.mse_loss(recon, signal_data)
+        
+        beta = min(1.0, self.current_epoch / 100)  # 예: 50 epoch 동안 0 -> 1로 증가
+        lambda_kl = 0.1  # KL loss를 10%로 반영
+        total_loss = recon_loss + lambda_kl * beta * distribution_loss
+        distribution_loss = lambda_kl*beta*distribution_loss
+        total_loss = recon_loss.sum() + distribution_loss.sum()
+        return total_loss, recon_loss, distribution_loss
+    
+    def compute_classification_loss(self, signal_data, meta_data):
+        z = self.model.encode(signal_data, True)
+        
+        pred = self.classifier(z)
+        indices = self.label_to_index(meta_data['class_name'])
+        return self.criterion_class(pred, indices), pred, indices
     
     def training_step(self, batch, batch_idx):
-        self.first_val_step = True
-        if self.training_mode == 'recon':
-            signal_data, meta_data = batch
-            
-            if self.model_type == 'ae':
-                recon = self.model(signal_data)
-                recon_loss = self.mse_loss(recon, signal_data)
-                
-                self.log("train/recon_loss", recon_loss, prog_bar=True, logger=True)
-                total_loss = recon_loss
-            else:
-                recon, distribution_loss = self.model(signal_data)
-                recon_loss = self.mse_loss(recon, signal_data)
-                
-                self.log("train/recon_loss", recon_loss, prog_bar=True, logger=True)
-                self.log("train/distribution_loss", recon_loss, prog_bar=True, logger=True)
-                total_loss = recon_loss+distribution_loss
-                self.log("train/total_loss", recon_loss, prog_bar=True, logger=True)
-            
-            
-            return total_loss
+        signal_data, meta_data = batch
+        total_loss, recon_loss, distribution_loss = self.compute_recon_loss(signal_data, meta_data)
+        self.log("train/recon_loss", recon_loss, batch_size=self.batch_size)
+        self.log("train/distribution_loss", distribution_loss, batch_size=self.batch_size)
         
-        # elif self.training_mode =='transfer':
-        #     content_input, style_input = batch
-            
-        #     content_feature = ae_model.encode(content_input, before_vector=True)
-        #     style_feature = ae_model.encode(style_input, before_vector=True)
-
-        #     tranfer_feature, transmatrix, KL = ltm(content_feature=content_feature, style_feature=style_feature, transfer=True)
-        #     transfer_out = ae_model.decode(tranfer_feature)
-
-        #     style_loss, content_loss = ae_model.style_content_loss(style_input=style_input, content_input=content_input, transfer_out=transfer_out)
-
-        #     total_loss = style_loss + content_loss + KL.sum()
-            
-        #     self.log("train/total_loss", total_loss, prog_bar=True, logger=True)
-        #     self.log("train/style_loss", style_loss, logger=True)
-        #     self.log("train/content_loss", content_loss, logger=True)
-        #     self.log("train/KL_loss", KL.sum(), logger=True)
-            
-        #     return total_loss
+        if self.classifier:
+            class_loss, _, _ = self.compute_classification_loss(signal_data, meta_data)
+            self.log("train/classification_loss", class_loss, batch_size=self.batch_size)
+            total_loss += class_loss
         
+        self.log("train/total_loss", total_loss, batch_size=self.batch_size)
+        return total_loss
+
     def validation_step(self, batch, batch_idx):
-        if self.training_mode == 'recon':
-            signal_data, meta_data = batch
-            
-            if self.model_type == 'ae':
-                recon = self.model(signal_data)
-                recon_loss = self.mse_loss(recon, signal_data)
-                
-                self.log("val/recon_loss", recon_loss, prog_bar=True, logger=True)
-                total_loss = recon_loss
-            else:
-                recon, distribution_loss = self.model(signal_data)
-                recon_loss = self.mse_loss(recon, signal_data)
-                
-                self.log("val/recon_loss", recon_loss, prog_bar=True, logger=True)
-                self.log("val/distribution_loss", recon_loss, prog_bar=True, logger=True)
-                total_loss = recon_loss+distribution_loss
-                self.log("val/total_loss", recon_loss, prog_bar=True, logger=True)
-            
-            # 첫 번째 validation step에서 시각화 수행
-            if self.first_val_step:
-                self.first_val_step = False  # 이후 step에서는 실행하지 않도록 설정
-                self.plot_reconstruction(signal_data, recon)
+        self.input_signals = batch[0]  # Store input signals for visualization
+        signal_data, meta_data = batch
+        total_loss, recon_loss, distribution_loss = self.compute_recon_loss(signal_data, meta_data)
+        self.log("val/recon_loss", recon_loss, batch_size=self.batch_size)
+        self.log("val/distribution_loss", distribution_loss, batch_size=self.batch_size)
 
-            return total_loss
-    
-        # elif self.training_mode == 'transfer':
-        #     content_input, style_input = batch
-            
-        #     content_feature = self.model.encode(content_input, before_vector=True)
-        #     style_feature = self.model.encode(style_input, before_vector=True)
+        z = self.model.encode(signal_data)
+        z = z.view(z.shape[0], -1)  # 배치 차원 유지
+        self.encoded_features.append(z.detach().cpu())  # GPU에서 CPU로 이동하여 저장
+        self.labels.append(self.label_to_index(meta_data['class_name']).detach().cpu())
 
-        #     transfer_feature, transmatrix, KL = self.ltm(
-        #         content_feature=content_feature, 
-        #         style_feature=style_feature, 
-        #         transfer=True
-        #     )
-        #     transfer_out = self.model.decode(transfer_feature)
+        if self.classifier:
+            class_loss, pred, indices = self.compute_classification_loss(signal_data, meta_data)
+            self.log("val/classification_loss", class_loss, batch_size=self.batch_size)
+            total_loss += class_loss
+            self.y_true.extend(indices.cpu().numpy())
+            self.y_pred.extend(torch.argmax(pred, dim=1).cpu().numpy())
+        
+        self.log("val/total_loss", total_loss, batch_size=self.batch_size)
+        return total_loss
 
-        #     style_loss, content_loss = self.model.style_content_loss(
-        #         style_input=style_input, 
-        #         content_input=content_input, 
-        #         transfer_out=transfer_out
-        #     )
+    def on_validation_epoch_end(self):
+        self.visualize_latent_space()
+        self.visualize_reconstructions()
+        if self.classifier and self.y_true:
+            precision, recall, f1, _ = precision_recall_fscore_support(self.y_true, self.y_pred, average='macro', zero_division=1)
+            self.log("val/precision", precision, self.batch_size)
+            self.log("val/recall", recall, self.batch_size)
+            self.log("val/f1_score", f1, self.batch_size)
+            self.log_confusion_matrix()
+            self.y_true.clear()
+            self.y_pred.clear()
 
-        #     total_loss = style_loss + content_loss + KL.sum()
+    def log_confusion_matrix(self):
+        cm = confusion_matrix(self.y_true, self.y_pred)
+        fig, ax = plt.subplots(figsize=(6,6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=self.classes, yticklabels=self.classes)
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix')
+        self.logger.experiment.log({"val/confusion_matrix": wandb.Image(fig)})
+        plt.close(fig)
 
-        #     # 🟢 WandB에 다양한 Validation Loss 기록
-        #     self.log("val/total_loss", total_loss, prog_bar=True, logger=True)
-        #     self.log("val/style_loss", style_loss, logger=True)
-        #     self.log("val/content_loss", content_loss, logger=True)
-        #     self.log("val/KL_loss", KL.sum(), logger=True)
-
-        #     # 첫 번째 validation step에서 시각화 수행
-        #     if self.first_val_step:
-        #         self.first_val_step = False  # 이후 step에서는 실행하지 않도록 설정
-        #         self.plot_signals(content_input, style_input, transfer_out)
-
-        #     return total_loss
-
-    def plot_reconstruction(self, original_input, recon_output):
-        """Validation에서 Reconstruction 결과를 WandB에 시각화"""
-        num_samples = 3  # 3개의 샘플을 시각화
-        fig, axes = plt.subplots(num_samples, 2, figsize=(12, 6))
-
+    def visualize_latent_space(self):
+        if not self.encoded_features:
+            return
+        encoded_features_all = torch.cat(self.encoded_features, dim=0).numpy()
+        labels_all = torch.cat(self.labels, dim=0).numpy()
+        label_names = np.array([self.classes[idx] for idx in labels_all])
+        
+        scaler = StandardScaler()
+        scaled_features = scaler.fit_transform(encoded_features_all)
+        pca = PCA(n_components=2)
+        pca_result = pca.fit_transform(scaled_features)
+        tsne = TSNE(n_components=2, perplexity=30, learning_rate=200, random_state=42, init='random')
+        tsne_result = tsne.fit_transform(scaled_features)
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        sns.scatterplot(x=pca_result[:, 0], y=pca_result[:, 1], hue=label_names, palette="Set1", ax=axes[0])
+        axes[0].set_title("PCA Visualization")
+        sns.scatterplot(x=tsne_result[:, 0], y=tsne_result[:, 1], hue=label_names, palette="Set1", ax=axes[1])
+        axes[1].set_title("t-SNE Visualization")
+        plt.tight_layout()
+        self.logger.experiment.log({"Feature Encoding Visualization": wandb.Image(fig)})
+        plt.close(fig)
+        self.encoded_features.clear()
+        self.labels.clear()
+        
+        if not self.y_pred:
+            return
+        cm = confusion_matrix(self.y_true, self.y_pred)
+        fig, ax = plt.subplots(figsize=(6,6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=self.classes, yticklabels=self.classes)
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix')
+        self.logger.experiment.log({"val/confusion_matrix": wandb.Image(fig)})
+        plt.close(fig)
+        
+    def visualize_reconstructions(self):
+        if self.input_signals is None:
+            return
+        num_samples = 3
+        fig, axes = plt.subplots(2, num_samples, figsize=(12, 6))  # 2개의 플롯(채널별) 생성
         for i in range(num_samples):
-            # 2채널 신호 가져오기
-            original_signal = original_input[i].detach().cpu().numpy()
-            recon_signal = recon_output[i].detach().cpu().numpy()
+            original_signal = self.input_signals[i].unsqueeze(0).to(self.device)
+            recon_signal, _ = self.model(original_signal.to(self.device))
             
-            # x축 (시계열 데이터 기준)
+            original_signal = original_signal.squeeze(0).detach().cpu().numpy()
+            recon_signal = recon_signal.squeeze(0).detach().cpu().numpy()
             time = np.arange(original_signal.shape[-1])
-
-            # 2채널을 각각 플롯
-            for ch in range(2):
-                axes[i, 0].plot(time, original_signal[ch], label=f"Ch {ch+1}")
-                axes[i, 1].plot(time, recon_signal[ch], label=f"Ch {ch+1}")
-
-            axes[i, 0].set_title(f"Original Signal {i+1}")
-            axes[i, 1].set_title(f"Reconstructed Signal {i+1}")
-
-            for j in range(2):
-                axes[i, j].legend()
-                axes[i, j].grid()
-
-        plt.tight_layout()
-
-        # WandB에 플롯 업로드
-        wandb.log({"Reconstruction Comparison": wandb.Image(fig)})
-        plt.close(fig)
-
-    def plot_signals(self, content_input, style_input, transfer_out):
-        """Validation의 첫 번째 step에서 신호 데이터를 플롯하여 WandB에 로깅"""
-        num_samples = 3  # 3개의 샘플을 시각화
-        fig, axes = plt.subplots(num_samples, 3, figsize=(12, 8))
-
-        for i in range(num_samples):
-            # 2채널 신호 가져오기 (배치에서 i번째 샘플)
-            content_signal = content_input[i].detach().cpu().numpy()
-            style_signal = style_input[i].detach().cpu().numpy()
-            transfer_signal = transfer_out[i].detach().cpu().numpy()
             
-            # x축 (시계열 데이터 기준)
-            time = np.arange(content_signal.shape[-1])  
-
-            # 2채널을 각각 그리기
-            for ch in range(2):  # 2개의 채널 (Stereo Signal)
-                axes[i, 0].plot(time, content_signal[ch], label=f"Ch {ch+1}")
-                axes[i, 1].plot(time, style_signal[ch], label=f"Ch {ch+1}")
-                axes[i, 2].plot(time, transfer_signal[ch], label=f"Ch {ch+1}")
-
-            axes[i, 0].set_title(f"Content Signal {i+1}")
-            axes[i, 1].set_title(f"Style Signal {i+1}")
-            axes[i, 2].set_title(f"Transfer Output {i+1}")
-
-            for j in range(3):
-                axes[i, j].legend()
-                axes[i, j].grid()
-
+            for ch in range(2):  # 2개의 채널
+                axes[ch, i].plot(time, original_signal[ch], label="Original", linestyle='-')
+                axes[ch, i].plot(time, recon_signal[ch], label="Reconstructed", linestyle='dashed')
+                axes[ch, i].set_title(f"Sample {i+1} - Channel {ch+1}")
+                axes[ch, i].legend()
+                axes[ch, i].grid()
+        
         plt.tight_layout()
-
-        # WandB에 플롯 업로드
-        wandb.log({"Signal Reconstruction": wandb.Image(fig)})
+        self.logger.experiment.log({"Reconstruction Comparison": wandb.Image(fig)})
         plt.close(fig)
-
-if __name__ == '__main__':
-    # 1. Dataset Load    
-    target_channels = ['motor_x', 'motor_y']  # Example channel names
-    dxai_root = os.path.join(os.getcwd(), 'data', 'new_dataset')  # Path to vibration data
-    target_dataset=['mfd', 'vat', 'vbl']
-    target_class=['looseness', 'normal', 'unbalance', 'misalignment', 'misalignment-horizontal', 'misalignment-vertical',
-                    'overhang', 'underhang', 'bearing-bpfi', 'bearing-bpfo']
-
-    pipeline = VibrationPipeline(
-        harmonics=8,  
-        points_per_harmonic=32,  
-        smoothing_steps=1,  
-        smoothing_param=0.1  
-    )
-    train_dataset = VibrationDataset(dxai_root, target_dataset=target_dataset, target_ch=target_channels, target_class=target_class, transform=pipeline)
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=19)
-    test_dataset = VibrationDataset(dxai_root, target_dataset=['dxai'], target_ch=target_channels, target_class=target_class, transform=pipeline)
-    test_loader = DataLoader(test_dataset, batch_size=64, num_workers=19)
-    
-    # Data Shape : B x 2 x 256
-    sample_signal, sample_meta_data = train_dataset[0]
-
-    # 2 Model Load
-    num_hiddens = 128
-    num_residual_hiddens = 32
-    num_residual_layers = 32
-    embedding_dim = 32
-    num_embeddings = 16
-    commitment_cost = 0.25 # dummy param
-    in_channels = sample_signal.size(-2)
-    in_length = sample_signal.size(-1)
-    
-    training_model = 'recon'
-    model_type = 'ae'
-    
-    ae_model = AE_model(
-        num_hiddens=num_hiddens,
-        in_length = in_length,
-        in_channels=in_channels,
-        num_residual_layers=num_residual_layers,
-        num_residual_hiddens=num_residual_hiddens,
-        num_embeddings=num_embeddings,
-        embedding_dim=embedding_dim,
-        commitment_cost=commitment_cost
-    )
-
-    lightning_ae = Trainer(model=ae_model, 
-                            training_mode=training_model,
-                            model_type=model_type)
-    
-    # WandB Logger 설정
-    wandb_logger = WandbLogger(
-        project="Vibration-AutoEncoder",  # 프로젝트 이름
-        name="AE_Reconstruction",  # 실험 이름
-        log_model=True  # 모델 구조 로깅
-    )
-    
-    
-    # Trainer 설정
-    trainer = L.Trainer(
-        max_epochs=100,  # 최대 학습 Epochs
-        logger=wandb_logger,  # WandB 로깅 추가
-        log_every_n_steps=5  # 매 10 스텝마다 로그 기록
-    )
-    
-    # 모델 학습
-    trainer.fit(lightning_ae, train_loader, test_loader)
+        self.input_signals = None

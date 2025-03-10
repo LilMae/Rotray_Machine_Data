@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.matching_trainer import MappingNetwork
+from models.adhoc_layers import MappingNetwork
 from models.layers import Encoder, Decoder, ChannelWiseFC
 
 class VectorQuntizer(nn.Module):
@@ -254,33 +254,14 @@ class VQVAE_model(nn.Module):
         print(f'output : {x_recon.shape}')
         return x_recon, vq_loss
     
-    def interpolation(self, x0, x1, ratio, before_vq=True):
-        z0 = self.encoder(x0)
-        z0 = self.pre_vq_conv(z0)
-        z0 = self.pre_vq_fc(z0)
+    def encode(self, x, for_z=True):
+        z = self.encoder(x)
+        z = self.pre_vq_conv(z)     
+        z = self.pre_vq_fc(z)
         if self.use_mapping_net:
-            z0 = self.mapping_net(z0)
+            z = self.mapping_net(z)
         
-        z1 = self.encoder(x1)
-        z1 = self.pre_vq_conv(z1)    
-        z1 = self.pre_vq_fc(z1)
-        if self.use_mapping_net:
-            z1 = self.mapping_net(z1)
-        
-        if before_vq:
-            z = z0*ratio + z1*(1-ratio)
-            
-            vq_loss, quantized, perplexity, _ = self.vq_vae(z)
-            quantized = self.after_vq_fc(quantized)
-        else:
-            vq_loss, quantized_0, perplexity, _ = self.vq_vae(z0)
-            vq_loss, quantized_1, perplexity, _ = self.vq_vae(z1)
-            quantized = quantized_0*ratio + quantized_1*(1-ratio)
-            quantized = self.after_vq_fc(quantized)
-        
-        x_interpolated = self.decoder(quantized)
-        
-        return x_interpolated
+        return z
 
 
 if __name__ == '__main__':

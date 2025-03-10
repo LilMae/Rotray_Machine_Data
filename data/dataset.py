@@ -10,11 +10,12 @@ import torch
 from scipy.signal import butter, filtfilt
 
 from tqdm import tqdm
+from sklearn.preprocessing import MinMaxScaler
 
 import matplotlib.pyplot as plt
 
 class VibrationPipeline:
-    def __init__(self, harmonics=10, points_per_harmonic=30, smoothing_steps=32, smoothing_param=0.1):
+    def __init__(self, harmonics=10, points_per_harmonic=30, smoothing_steps=32, smoothing_param=0.1, log_scale=True):
         """
         Pipeline to process vibration data with low-pass smoothing, FFT, detailed harmonic scaling, and normalization.
 
@@ -28,6 +29,7 @@ class VibrationPipeline:
         self.points_per_harmonic = points_per_harmonic
         self.smoothing_steps = smoothing_steps
         self.smoothing_param = smoothing_param
+        self.log_scale = log_scale
 
     def smooth_data(self, data, sampling_rate):
         """
@@ -108,18 +110,24 @@ class VibrationPipeline:
 
         # Step 4: Scale to detailed harmonics
         detailed_magnitude, detailed_bins = self.scale_to_detailed_harmonics(magnitude, freqs, sync_freq)
-
+        
+        if self.log_scale:
+            detailed_magnitude = np.log1p(detailed_magnitude)  # log(1 + x) 형태 적용
+        
+        
         # Step 5: Normalize
-        norm_magnitude = detailed_magnitude / np.sum(detailed_magnitude, axis=1, keepdims=True)
+        scaler = MinMaxScaler()
+        norm_magnitude = scaler.fit_transform(detailed_magnitude.T).T  # 채널별 MinMax 스케일링 적용
+        # norm_magnitude = detailed_magnitude / np.sum(detailed_magnitude, axis=1, keepdims=True)
 
         return torch.tensor(norm_magnitude, dtype=torch.float32), detailed_bins
     
 class VibrationDataset(Dataset):
     def __init__(self, data_root, 
-                 target_dataset=['dxai', 'iis', 'mfd', 'vat', 'vbl'], 
-                 target_class=['looseness', 'normal', 'unbalance','misalignment', 'horizontal-misalignment', 'vertical-misalignment', 'overhang', 'underhang', 'bpfi', 'bpfo', 'bearing'], 
-                 target_ch = ['motor_x', 'motor_y'],
-                 transform=None):
+                    target_dataset=['dxai', 'iis', 'mfd', 'vat', 'vbl'], 
+                    target_class=['looseness', 'normal', 'unbalance','misalignment', 'horizontal-misalignment', 'vertical-misalignment', 'overhang', 'underhang', 'bpfi', 'bpfo', 'bearing'], 
+                    target_ch = ['motor_x', 'motor_y'],
+                    transform=None):
         """
         Dataset for vibration data.
         
@@ -147,7 +155,7 @@ class VibrationDataset(Dataset):
         
         # Load metadata
         file_name = os.path.basename(file_path)
-        class_name = file_name.split('_')[0]
+        class_name = file_name.split('_')[0].split('+')[0]
         sampling_rate = file_name.split('_')[1]
         sampling_rate = float(sampling_rate.replace('kHz',''))*1000
         rotating_speed = float(file_name.split('_')[2])

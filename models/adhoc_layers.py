@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from models.layers import ChannelWiseFC
+
 class EqualizedLearningRate(nn.Module):
     """ Equalized Learning Rate layer for StyleGAN. """
     def __init__(self, layer):
@@ -33,7 +35,7 @@ class MappingNetwork(nn.Module):
             layer = EqualizedLearningRate(layer)
             self.fc_layers.append(layer)
             
-        self.inst_norms = nn.ModuleList([nn.InstanceNorm1d(z_dim, affine=False) for _ in range(num_layers)])
+        self.inst_norms = nn.ModuleList([nn.InstanceNorm1d(affine=False) for _ in range(num_layers)])
 
     def forward(self, z):
         
@@ -49,6 +51,34 @@ class MappingNetwork(nn.Module):
         w = w.view(batch_size, self.num_embeddings, self.embedding_dim)    
         
         return w
+
+class Classifier(nn.Module):
+    def __init__(self, in_channels, in_dim, n_classes):
+        super(Classifier, self).__init__()
+        
+        self.squeeze_layers = nn.Sequential(ChannelWiseFC(in_channels=in_channels,
+                                    in_features=in_dim,
+                                    out_features=int(in_dim//2)),
+                                nn.ReLU(),
+                                nn.BatchNorm1d(in_dim),
+                                ChannelWiseFC(in_channels=in_channels,
+                                    in_features=int(in_dim//2),
+                                    out_features=1),
+                                nn.Flatten()
+                                )
+        self.classifier = nn.Sequential(
+                                nn.Linear(in_channels, in_channels//2),
+                                nn.ReLU(),
+                                nn.Linear(in_channels//2, n_classes)
+                                )
+        
+        nn.Flatten()        
+    def forward(self, x):
+        
+        z = self.squeeze_layers(x)
+        out = self.classifier(z)
+        
+        return out
 
 if __name__ == '__main__':
     print('StyleGAN Idea')
